@@ -2,4 +2,7 @@
 **/Debug
 **/.metadata
 **/.settings
-**/.*project
+
+**/.project
+**/.cproject
+**/.mxproject
