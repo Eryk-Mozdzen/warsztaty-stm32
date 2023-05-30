@@ -22,10 +22,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "lps22hb_register_map.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+#define ADDRESS	(0b01011101<<1)
 
 /* USER CODE END PTD */
 
@@ -59,6 +63,12 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+uint32_t pressure_raw;
+int16_t temperature_raw;
+
+float pressure_hPa;
+float temperature_C;
 
 /* USER CODE END 0 */
 
@@ -98,9 +108,51 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  {
+	  uint8_t reg;
+	  HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_WHO_AM_I, 1, &reg, 1, HAL_MAX_DELAY);
+
+	  if(reg==0b10110001) {
+		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+	  }
+  }
+
+  {
+  		// BOOT
+	  	// Software Reset
+  		uint8_t reg = (1<<7) || (1<<1);
+  		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
+  	}
+
+  {
+	  // Output Data Rate 25Hz
+	  uint8_t reg = (3<<4);
+	  HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG1, 1, &reg, 1, HAL_MAX_DELAY);
+  }
+
+	{
+		// Register address automatically incremented
+		uint8_t reg = (1<<4);
+		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
+	}
+
+
   while (1)
   {
     /* USER CODE END WHILE */
+
+	  {
+		  uint8_t buffer[5] = {0};
+		  HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
+
+		  pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
+		  temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
+
+		  pressure_hPa = pressure_raw/4096.f;
+		  temperature_C = temperature_raw/100.f;
+	  }
+
+	  HAL_Delay(100);
 
     /* USER CODE BEGIN 3 */
   }

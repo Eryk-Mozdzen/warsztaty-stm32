@@ -29,4 +29,11 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>sensor-headers</name>
+			<type>2</type>
+			<locationURI>WORKSPACE_LOC/sensor-headers</locationURI>
+		</link>
+	</linkedResources>
 </projectDescription>
