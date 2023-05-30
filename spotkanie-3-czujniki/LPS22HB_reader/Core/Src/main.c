@@ -64,11 +64,31 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-uint32_t pressure_raw;
-int16_t temperature_raw;
+//uint32_t pressure_raw;
+//int16_t temperature_raw;
 
 float pressure_hPa;
 float temperature_C;
+
+uint8_t buffer[5];
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if(GPIO_Pin==INTERRUPT_Pin) {
+		HAL_I2C_Mem_Read_IT(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5);
+	}
+}
+
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+	if(hi2c->Instance==I2C1) {
+		const uint32_t pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
+		const int16_t temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
+
+		pressure_hPa = pressure_raw/4096.f;
+		temperature_C = temperature_raw/100.f;
+
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	}
+}
 
 /* USER CODE END 0 */
 
@@ -108,27 +128,28 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  {
-	  uint8_t reg;
-	  HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_WHO_AM_I, 1, &reg, 1, HAL_MAX_DELAY);
 
-	  if(reg==0b10110001) {
+	{
+		uint8_t reg = 0;
+		HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_WHO_AM_I, 1, &reg, 1, HAL_MAX_DELAY);
+
+		if(reg==0b10110001) {
 		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-	  }
-  }
+		}
+	}
 
-  {
-  		// BOOT
-	  	// Software Reset
-  		uint8_t reg = (1<<7) || (1<<1);
-  		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
-  	}
+	{
+		// BOOT
+		// Software Reset
+		uint8_t reg = (1<<7) || (1<<1);
+		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
+	}
 
-  {
-	  // Output Data Rate 25Hz
-	  uint8_t reg = (3<<4);
-	  HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG1, 1, &reg, 1, HAL_MAX_DELAY);
-  }
+	{
+		// Output Data Rate 25Hz
+		uint8_t reg = (3<<4);
+		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG1, 1, &reg, 1, HAL_MAX_DELAY);
+	}
 
 	{
 		// Register address automatically incremented
@@ -136,23 +157,31 @@ int main(void)
 		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
 	}
 
+	{
+		// DRDY interrupt
+		uint8_t reg = (1<<2);
+		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG3, 1, &reg, 1, HAL_MAX_DELAY);
+	}
 
-  while (1)
-  {
+	// dummy read
+	HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
+
+  while(1) {
+
+	/*{
+		uint8_t buffer[5] = {0};
+		HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
+
+		pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
+		temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
+
+		pressure_hPa = pressure_raw/4096.f;
+		temperature_C = temperature_raw/100.f;
+	}
+
+	HAL_Delay(100);*/
+
     /* USER CODE END WHILE */
-
-	  {
-		  uint8_t buffer[5] = {0};
-		  HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
-
-		  pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
-		  temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
-
-		  pressure_hPa = pressure_raw/4096.f;
-		  temperature_C = temperature_raw/100.f;
-	  }
-
-	  HAL_Delay(100);
 
     /* USER CODE BEGIN 3 */
   }
@@ -323,6 +352,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : INTERRUPT_Pin */
+  GPIO_InitStruct.Pin = INTERRUPT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(INTERRUPT_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
