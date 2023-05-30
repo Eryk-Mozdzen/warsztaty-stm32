@@ -129,6 +129,8 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
+	HAL_NVIC_DisableIRQ(INTERRUPT_EXTI_IRQn);
+
 	{
 		uint8_t reg = 0;
 		HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_WHO_AM_I, 1, &reg, 1, HAL_MAX_DELAY);
@@ -162,6 +164,8 @@ int main(void)
 		uint8_t reg = (1<<2);
 		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG3, 1, &reg, 1, HAL_MAX_DELAY);
 	}
+
+	HAL_NVIC_EnableIRQ(INTERRUPT_EXTI_IRQn);
 
 	// dummy read
 	HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
