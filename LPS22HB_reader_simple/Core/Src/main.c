@@ -22,14 +22,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include "lps22hb_register_map.h"
+#include <lps22hb_register_map.h>
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
-#define ADDRESS	(0b01011101<<1)
 
 /* USER CODE END PTD */
 
@@ -46,8 +44,6 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-UART_HandleTypeDef huart2;
-
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -55,7 +51,6 @@ UART_HandleTypeDef huart2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -64,31 +59,18 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-//uint32_t pressure_raw;
-//int16_t temperature_raw;
+#define LPS22HB_I2C_ADDRESS 0xBA
 
-float pressure_hPa;
-float temperature_C;
-
-uint8_t buffer[5];
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	if(GPIO_Pin==INTERRUPT_Pin) {
-		HAL_I2C_Mem_Read_IT(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5);
-	}
+void reg_write(uint8_t address, uint8_t value) {
+	HAL_I2C_Mem_Write(&hi2c1, LPS22HB_I2C_ADDRESS, address, 1, &value, 1, HAL_MAX_DELAY);
 }
 
-void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
-	if(hi2c->Instance==I2C1) {
-		const uint32_t pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
-		const int16_t temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
-
-		pressure_hPa = pressure_raw/4096.f;
-		temperature_C = temperature_raw/100.f;
-
-		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-	}
+void reg_read(uint8_t address, uint8_t *dest, uint8_t num) {
+	HAL_I2C_Mem_Read(&hi2c1, LPS22HB_I2C_ADDRESS, address, 1, dest, num, HAL_MAX_DELAY);
 }
+
+static uint32_t pressure = 0;
+static uint16_t temperature = 0;
 
 /* USER CODE END 0 */
 
@@ -120,7 +102,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
@@ -129,61 +110,26 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-	HAL_NVIC_DisableIRQ(INTERRUPT_EXTI_IRQn);
+	uint8_t who_i_am;
+	reg_read(LPS22HB_WHO_AM_I, &who_i_am, 1);
 
-	{
-		uint8_t reg = 0;
-		HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_WHO_AM_I, 1, &reg, 1, HAL_MAX_DELAY);
-
-		if(reg==0b10110001) {
-		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-		}
+	if(who_i_am==0b10110001) {
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
 	}
 
-	{
-		// BOOT
-		// Software Reset
-		uint8_t reg = (1<<7) | (1<<1);
-		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
-	}
-
-	{
-		// Output Data Rate 25Hz
-		uint8_t reg = (3<<4);
-		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG1, 1, &reg, 1, HAL_MAX_DELAY);
-	}
-
-	{
-		// Register address automatically incremented
-		uint8_t reg = (1<<4);
-		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG2, 1, &reg, 1, HAL_MAX_DELAY);
-	}
-
-	{
-		// DRDY interrupt
-		uint8_t reg = (1<<2);
-		HAL_I2C_Mem_Write(&hi2c1, ADDRESS, LPS22HB_CTRL_REG3, 1, &reg, 1, HAL_MAX_DELAY);
-	}
-
-	HAL_NVIC_EnableIRQ(INTERRUPT_EXTI_IRQn);
-
-	// dummy read
-	HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
+	reg_write(LPS22HB_CTRL_REG2, (1<<7));	// BOOT
+	reg_write(LPS22HB_CTRL_REG1, (3<<4));	// ODR 1 Hz
+	reg_write(LPS22HB_CTRL_REG2, (1<<4));	// auto increment
 
   while(1) {
 
-	/*{
-		uint8_t buffer[5] = {0};
-		HAL_I2C_Mem_Read(&hi2c1, ADDRESS, LPS22HB_PRESS_OUT_XL, 1, buffer, 5, HAL_MAX_DELAY);
+	  uint8_t buffer[5];
+	  reg_read(LPS22HB_PRESS_OUT_XL, buffer, sizeof(buffer));
 
-		pressure_raw = (((uint32_t)buffer[2])<<16) | (((uint32_t)buffer[1])<<8) | buffer[0];
-		temperature_raw = (((uint16_t)buffer[4])<<8) | buffer[3];
+	  pressure = (((uint32_t)buffer[2]) << 16) | (((uint32_t)buffer[1]) << 8) | buffer[0];
+	  temperature = (((uint16_t)buffer[4])<<8) | buffer[3];
 
-		pressure_hPa = pressure_raw/4096.f;
-		temperature_C = temperature_raw/100.f;
-	}
-
-	HAL_Delay(100);*/
+	  HAL_Delay(10);
 
     /* USER CODE END WHILE */
 
@@ -290,41 +236,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -336,36 +247,18 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : INTERRUPT_Pin */
-  GPIO_InitStruct.Pin = INTERRUPT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(INTERRUPT_GPIO_Port, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
